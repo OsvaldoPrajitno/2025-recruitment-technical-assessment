@@ -14,13 +14,28 @@ describe("Task 1", () => {
     });
 
     it("example2", async () => {
-      const response = await getTask1("alpHa-alFRedo");
+      const response = await getTask1("Alpha Alfredo");
       expect(response.body).toStrictEqual({ msg: "Alpha Alfredo" });
     });
 
     it("error case", async () => {
       const response = await getTask1("");
       expect(response.status).toBe(400);
+    });
+
+    it("custom 1", async () => {
+      const response = await getTask1("Final fantasy Online");
+      expect(response.body).toStrictEqual({ msg: "Final Fantasy Online" });
+    });
+
+    it("custom 2", async () => {
+      const response = await getTask1("GOOD SOUP");
+      expect(response.body).toStrictEqual({ msg: "Good Soup" });
+    });
+
+    it("custom 2", async () => {
+      const response = await getTask1("GOOD  SOUP--");
+      expect(response.body).toStrictEqual({ msg: "Good Soup" });
     });
   });
 });

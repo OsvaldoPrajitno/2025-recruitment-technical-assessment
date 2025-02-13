@@ -1,5 +1,7 @@
 import express, { Request, Response } from "express";
 
+process.env.NODE_ENV = 'production';
+
 // ==== Type Definitions, feel free to add or modify ==========================
 interface cookbookEntry {
   name: string;
@@ -19,6 +21,23 @@ interface ingredient extends cookbookEntry {
   cookTime: number;
 }
 
+interface summary {
+  name: string,
+  cookTime: number,
+  ingredients: requiredItem[]
+}
+
+class ItemNotFoundError extends Error {
+  statusCode: number
+
+  constructor(message: string, status: number) {
+    super(message); // Call the constructor of the base class `Error`
+    this.statusCode = status;
+
+    Object.setPrototypeOf(this, ItemNotFoundError.prototype);
+  }
+}
+
 // =============================================================================
 // ==== HTTP Endpoint Stubs ====================================================
 // =============================================================================
@@ -26,7 +45,7 @@ const app = express();
 app.use(express.json());
 
 // Store your recipes here!
-const cookbook: any = null;
+const cookbook: any = [];
 
 // Task 1 helper (don't touch)
 app.post("/parse", (req:Request, res:Response) => {
@@ -42,27 +61,159 @@ app.post("/parse", (req:Request, res:Response) => {
   
 });
 
+// returns true if format is correct
+const task1FormatChecker = (name: string): boolean => {
+  if (/[^a-zA-Z\s]|-|_|\s{2,}/.test(name)) return false;
+  
+  return !name.split(" ").some(word => /[a-z]/.test(word.charAt(0)) || /[A-Z]/.test(word.slice(1)));
+}
+
 // [TASK 1] ====================================================================
 // Takes in a recipeName and returns it in a form that 
 const parse_handwriting = (recipeName: string): string | null => {
-  // TODO: implement me
-  return recipeName
+  if (recipeName.length < 1) return null;
+
+  if (task1FormatChecker(recipeName)) {
+    return recipeName;
+  }
+
+  const actuallyReadable = recipeName
+    .replace(/-|_/g, " ")
+    .replace(/[^a-zA-Z\s]/g, '')
+    .replace(/\s{2,}/, " ")
+    .trim()
+    .toLowerCase();
+
+  const words = actuallyReadable
+    .split(" ")
+    .map(word => {
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    });
+
+  const ricipi = words.join(" ");
+  
+  return ricipi.length > 0? ricipi: null;
+}
+
+
+// Terrible way to check for duplicate names in requiredItems list
+// Returns true if duplicate name found
+const task2DupeChecker = (inputArray: requiredItem[]): boolean => {
+  if (inputArray.length <= 1) return false;
+
+  // sort array
+  inputArray.sort((a, b) => {
+    if (a.name > b.name) {
+      return 1;
+    } else {
+      return -1
+    }
+  })
+
+  // Check two adjacent object for the same name 
+  for (let i = 0; i < inputArray.length - 1; i++) {
+    if (inputArray[i].name === inputArray[i + 1].name) {
+      return true;
+    }
+  }
+
+  return false
 }
 
 // [TASK 2] ====================================================================
 // Endpoint that adds a CookbookEntry to your magical cookbook
 app.post("/entry", (req:Request, res:Response) => {
-  // TODO: implement me
-  res.status(500).send("not yet implemented!")
+  const { type, name, requiredItems, cookTime } = req.body;
 
+  if (type !== "recipe" && type !== "ingredient") return res.status(400).json("not my type ahh");
+  if (cookbook.some((entry: cookbookEntry) => entry.name === name)) return res.status(400).json("mental breakdown? mental breakdance");
+  
+
+  if (type === "recipe") {
+    if (task2DupeChecker(requiredItems)) return res.status(400).json("adhd core");
+
+    cookbook.push({
+      type: type,
+      name: name,
+      requiredItems: requiredItems
+    })
+  } else {
+    if (cookTime < 0) return res.status(400).json("minus cooktime????");
+    
+    cookbook.push({
+      type: type,
+      name: name,
+      cookTime: cookTime
+    })
+  }
+
+  res.sendStatus(200);
+
+  console.log(cookbook)
 });
+
+
+const combineTwoSummaries = (parentSummary: summary, load: summary, loadQtty: number) => {
+  parentSummary.cookTime += load.cookTime * loadQtty;
+
+  load.ingredients.forEach(loadIngdt => {
+    const target = parentSummary.ingredients.find(parentIngdt => parentIngdt.name === loadIngdt.name);
+
+    if (target) {
+      target.quantity += loadIngdt.quantity * loadQtty;
+    } else {
+      parentSummary.ingredients.push({
+        name: loadIngdt.name,
+        quantity: loadIngdt.quantity * loadQtty
+      });
+    }
+  })
+}
+
+const fuckedUpRecursion = (item: requiredItem): summary => {
+  const entry: ingredient|recipe = cookbook.find(( {name} ) => name === item.name);
+  
+  if (!entry) {
+    throw new ItemNotFoundError("Ingredient/Recipe Not Found in Cookbook", 400);
+  }
+
+  const summary: summary = {
+    name: entry.name,
+    cookTime: 0,
+    ingredients: []
+  }
+
+  if ('cookTime' in entry) {
+    summary.cookTime = entry.cookTime;
+    summary.ingredients.push({
+      name: entry.name,
+      quantity: 1
+    })
+
+  } else {
+  
+    for (const i of entry.requiredItems) {
+      const result = fuckedUpRecursion(i);
+      combineTwoSummaries(summary, result, i.quantity);
+    }
+  }
+
+  return summary;
+}
 
 // [TASK 3] ====================================================================
 // Endpoint that returns a summary of a recipe that corresponds to a query name
 app.get("/summary", (req:Request, res:Request) => {
-  // TODO: implement me
-  res.status(500).send("not yet implemented!")
+  const recipeName = req.query.name;
+  const recipe: recipe = cookbook.find((entry: cookbookEntry) => entry.name === recipeName && entry.type === "recipe");
 
+  if (!recipe) return res.status(400).send("bomboclaat");
+
+  const menuItem: requiredItem = {name: recipe.name, quantity: 1};
+  const summary: summary = fuckedUpRecursion(menuItem);
+  
+
+  res.status(200).send(JSON.stringify(summary))
 });
 
 // =============================================================================
