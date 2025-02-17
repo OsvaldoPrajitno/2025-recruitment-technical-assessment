@@ -1,6 +1,6 @@
 import express, { Request, Response } from "express";
 
-process.env.NODE_ENV = 'production';
+process.env.NODE_ENV = 'production'; // to prevent stack trace from displaying when throwing errors
 
 // ==== Type Definitions, feel free to add or modify ==========================
 interface cookbookEntry {
@@ -98,7 +98,7 @@ const parse_handwriting = (recipeName: string): string | null => {
 
 // Terrible way to check for duplicate names in requiredItems list
 // Returns true if duplicate name found
-const task2DupeChecker = (inputArray: requiredItem[]): boolean => {
+const task2DuplicateChecker = (inputArray: requiredItem[]): boolean => {
   if (inputArray.length <= 1) return false;
 
   // sort array
@@ -125,12 +125,12 @@ const task2DupeChecker = (inputArray: requiredItem[]): boolean => {
 app.post("/entry", (req:Request, res:Response) => {
   const { type, name, requiredItems, cookTime } = req.body;
 
-  if (type !== "recipe" && type !== "ingredient") return res.status(400).json("not my type ahh");
-  if (cookbook.some((entry: cookbookEntry) => entry.name === name)) return res.status(400).json("mental breakdown? mental breakdance");
+  if (type !== "recipe" && type !== "ingredient") return res.status(400).json("Invalid: Type Can Only Be Recipe or Ingrdient");
+  if (cookbook.some((entry: cookbookEntry) => entry.name === name)) return res.status(400).json("A Recipe With That Name Already Exists");
   
 
   if (type === "recipe") {
-    if (task2DupeChecker(requiredItems)) return res.status(400).json("adhd core");
+    if (task2DuplicateChecker(requiredItems)) return res.status(400).json("Required Items Contain Duplicate Names");
 
     cookbook.push({
       type: type,
@@ -138,7 +138,7 @@ app.post("/entry", (req:Request, res:Response) => {
       requiredItems: requiredItems
     })
   } else {
-    if (cookTime < 0) return res.status(400).json("minus cooktime????");
+    if (cookTime < 0) return res.status(400).json("Invalid: Negative Cooktime");
     
     cookbook.push({
       type: type,
@@ -170,7 +170,8 @@ const combineTwoSummaries = (parentSummary: summary, load: summary, loadQtty: nu
   })
 }
 
-const fuckedUpRecursion = (item: requiredItem): summary => {
+// Traverse a recipe's required items recursively until it finds an ingredient, then returns the summary to be combined
+const unravelRecipe = (item: requiredItem): summary => {
   const entry: ingredient|recipe = cookbook.find(( {name} ) => name === item.name);
   
   if (!entry) {
@@ -193,7 +194,7 @@ const fuckedUpRecursion = (item: requiredItem): summary => {
   } else {
   
     for (const i of entry.requiredItems) {
-      const result = fuckedUpRecursion(i);
+      const result = unravelRecipe(i);
       combineTwoSummaries(summary, result, i.quantity);
     }
   }
@@ -207,10 +208,10 @@ app.get("/summary", (req:Request, res:Request) => {
   const recipeName = req.query.name;
   const recipe: recipe = cookbook.find((entry: cookbookEntry) => entry.name === recipeName && entry.type === "recipe");
 
-  if (!recipe) return res.status(400).send("bomboclaat");
+  if (!recipe) return res.status(400).send("Recipe Not Found");
 
   const menuItem: requiredItem = {name: recipe.name, quantity: 1};
-  const summary: summary = fuckedUpRecursion(menuItem);
+  const summary: summary = unravelRecipe(menuItem);
   
 
   res.status(200).send(JSON.stringify(summary))
